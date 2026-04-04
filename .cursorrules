@@ -1,0 +1,38 @@
+# .cursorrules — Neural-Rip v4.0 / Origami Protocol
+# Applied to every AI agent session in this workspace.
+
+## Non-Negotiable Priorities
+
+### 1. Apple Silicon ANE-First
+- All CoreML inference MUST target `MLComputeUnits.cpuAndNeuralEngine`.
+- Never silently fall back to CPU-only or GPU-only; raise a logged warning if
+  ANE is unavailable at runtime.
+- Use `coremltools >= 7.0` APIs. Do not use deprecated `MLModel` load paths.
+- When writing CoreML conversion code, always set `compute_precision` to
+  `ct.precision.FLOAT16` to maximise ANE throughput.
+
+### 2. Zstandard Multi-Threading
+- All zstd operations must pass `threads` (Python binding) or `--threads=0`
+  (CLI) to saturate M-series Performance cores.
+- Use dictionary-based compression (`ZstdCompressionDict`) when compressing
+  sets of similar files (e.g., video segments, subtitle tracks).
+- Minimum compression level: `zstd.COMPRESSION_LEVEL_DEFAULT` (3).
+  Maximum for archival: level 19. Never use level > 19 in interactive paths.
+
+## Code Style
+- Python ≥ 3.12; use `match/case`, `tomllib`, `asyncio.TaskGroup` where natural.
+- Prefer `pathlib.Path` over `os.path` everywhere.
+- Use `rich` for all terminal output — no bare `print()` in production paths.
+- Type-annotate all public functions with PEP 695 syntax where beneficial.
+
+## Architecture Rules
+- Entry point: `neural_rip.py` (root). Submodules in `scripts/`.
+- CoreML models live in `models/` as `.mlpackage` bundles — never inline weights.
+- No blocking I/O on the main thread; use `asyncio` or `concurrent.futures`.
+- Secrets/tokens go in `.env` (python-dotenv); never hard-code or commit them.
+
+## What NOT To Do
+- Do not suggest GPU Metal shaders as a replacement for ANE paths.
+- Do not add synchronous `time.sleep()` polling loops.
+- Do not use `pickle` for model serialization — use CoreML `.mlpackage` only.
+- Do not introduce dependencies that lack Apple Silicon wheels on PyPI.
