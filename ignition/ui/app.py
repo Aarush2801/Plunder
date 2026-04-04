@@ -1,0 +1,203 @@
+from __future__ import annotations
+
+from textual.app import App, ComposeResult
+from textual.widgets import Static, DataTable, Input, Label
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.binding import Binding
+
+from ignition.engine import TorrentEngine, TorrentStatus
+from ignition.ui.banner import IGNITION_ASCII
+from ignition.ui.rain import MatrixRain
+from ignition.ui.theme import CSS
+from ignition.ui.widgets import (
+    PieceMapWidget, ThroughputWidget, LogWidget,
+    fmt_bytes, fmt_rate, fmt_eta,
+)
+
+COMPLETE_ART = """
+██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗███████╗████████╗██████╗ ██╗   ██╗ ██████╗████████╗██╗ ██████╗ ███╗   ██╗
+██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║██╔════╝╚══██╔══╝██╔══██╗██║   ██║██╔════╝╚══██╔══╝██║██╔═══██╗████╗  ██║
+██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║███████╗   ██║   ██████╔╝██║   ██║██║        ██║   ██║██║   ██║██╔██╗ ██║
+██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║╚════██║   ██║   ██╔══██╗██║   ██║██║        ██║   ██║██║   ██║██║╚██╗██║
+██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║███████║   ██║   ██║  ██║╚██████╔╝╚██████╗   ██║   ██║╚██████╔╝██║ ╚████║
+╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝  ╚═════╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+                                C O M P L E T E
+"""
+
+
+class DownloadCompleteScreen(ModalScreen):
+    def __init__(self, torrent_name: str):
+        super().__init__()
+        self._name = torrent_name
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            f"[bold bright_green]{COMPLETE_ART}[/]\n[green]{self._name}[/]",
+            id="complete-banner",
+            markup=True,
+        )
+
+    def on_mount(self):
+        self.set_timer(3.0, self._auto_dismiss)
+
+    def _auto_dismiss(self):
+        self.dismiss()
+
+    def on_click(self):
+        self.dismiss()
+
+    def key_escape(self):
+        self.dismiss()
+
+
+class AddMagnetScreen(ModalScreen):
+    BINDINGS = [Binding("escape", "dismiss", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dialog"):
+            yield Label("[bold green]ADD TORRENT[/]  (magnet link or .torrent path)", markup=True)
+            yield Input(placeholder="magnet:?xt=... or /path/to/file.torrent", id="magnet-input")
+            yield Label("[dim]Press Enter to add, Esc to cancel[/]", markup=True)
+
+    def on_input_submitted(self, event: Input.Submitted):
+        self.dismiss(event.value.strip())
+
+
+class IgnitionApp(App):
+    CSS = CSS
+    TITLE = "IGNITION"
+    BINDINGS = [
+        Binding("a", "add_torrent", "Add"),
+        Binding("p", "pause_selected", "Pause"),
+        Binding("r", "resume_selected", "Resume"),
+        Binding("d", "delete_selected", "Delete"),
+        Binding("q", "quit", "Quit"),
+        Binding("up", "move_up", "Up", show=False),
+        Binding("down", "move_down", "Down", show=False),
+    ]
+
+    def __init__(self, engine: TorrentEngine, initial_magnet: str | None = None):
+        super().__init__()
+        self.engine = engine
+        self._initial_magnet = initial_magnet
+        self._selected_idx = 0
+        self._statuses: list[TorrentStatus] = []
+        self._completed: set[str] = set()
+
+    def compose(self) -> ComposeResult:
+        yield MatrixRain()
+        yield Static(IGNITION_ASCII, id="banner", markup=False)
+        yield Static("─── ACTIVE TRANSFERS ───────────────────────────────────────", id="transfers-label", markup=False)
+        with Vertical(id="table-container"):
+            table = DataTable(id="downloads-table", show_cursor=True)
+            table.add_columns("NAME", "SIZE", "PROGRESS", "%", "DOWN", "UP", "PEERS", "ETA", "STATE")
+            yield table
+        with Horizontal(id="bottom-row"):
+            yield PieceMapWidget(id="piece-panel")
+            yield ThroughputWidget(id="throughput-panel")
+        yield LogWidget(id="log-panel")
+        yield Static(
+            "  [a]dd   [p]ause   [r]esume   [d]elete   [q]uit  ",
+            id="keybinds", markup=False,
+        )
+
+    def on_mount(self):
+        if self._initial_magnet:
+            try:
+                if self._initial_magnet.startswith("magnet:"):
+                    tid = self.engine.add_magnet(self._initial_magnet)
+                else:
+                    tid = self.engine.add_torrent_file(self._initial_magnet)
+                self.query_one("#log-panel", LogWidget).append([f"[+] Added: {tid[:16]}..."])
+            except Exception as e:
+                self.query_one("#log-panel", LogWidget).append([f"[!] Error: {e}"])
+        self.set_interval(0.5, self._refresh)
+
+    def _refresh(self):
+        self._statuses = self.engine.get_status()
+        alerts = self.engine.poll_alerts()
+
+        # Detect newly completed torrents
+        for s in self._statuses:
+            if s.state == "seeding" and s.id not in self._completed and s.progress >= 1.0:
+                self._completed.add(s.id)
+                self.push_screen(DownloadCompleteScreen(s.name))
+
+        table = self.query_one("#downloads-table", DataTable)
+        table.clear()
+
+        total_rate = 0
+        for s in self._statuses:
+            total_rate += s.download_rate
+            progress_chars = int(s.progress * 10)
+            prog_str = "█" * progress_chars + "░" * (10 - progress_chars)
+            size_str = fmt_bytes(s.total_size) if s.total_size else "..."
+            table.add_row(
+                s.name[:30],
+                size_str,
+                prog_str,
+                f"{s.progress*100:5.1f}%",
+                fmt_rate(s.download_rate),
+                fmt_rate(s.upload_rate),
+                str(s.num_peers),
+                fmt_eta(s.eta_seconds),
+                s.state.upper(),
+            )
+
+        if self._statuses:
+            self._selected_idx = min(self._selected_idx, len(self._statuses) - 1)
+            try:
+                self.query_one("#downloads-table", DataTable).move_cursor(row=self._selected_idx)
+            except Exception:
+                pass
+
+        piece_widget = self.query_one("#piece-panel", PieceMapWidget)
+        if self._statuses and 0 <= self._selected_idx < len(self._statuses):
+            piece_widget.update_status(self._statuses[self._selected_idx])
+        else:
+            piece_widget.update_status(None)
+
+        self.query_one("#throughput-panel", ThroughputWidget).update_rate(total_rate)
+
+        if alerts:
+            self.query_one("#log-panel", LogWidget).append(alerts)
+
+    def action_add_torrent(self):
+        def on_result(value: str | None):
+            if not value:
+                return
+            try:
+                if value.startswith("magnet:"):
+                    tid = self.engine.add_magnet(value)
+                else:
+                    tid = self.engine.add_torrent_file(value)
+                self.query_one("#log-panel", LogWidget).append([f"[+] Added: {tid[:16]}..."])
+            except Exception as e:
+                self.query_one("#log-panel", LogWidget).append([f"[!] Error: {e}"])
+
+        self.push_screen(AddMagnetScreen(), on_result)
+
+    def action_pause_selected(self):
+        if self._statuses and 0 <= self._selected_idx < len(self._statuses):
+            self.engine.pause(self._statuses[self._selected_idx].id)
+
+    def action_resume_selected(self):
+        if self._statuses and 0 <= self._selected_idx < len(self._statuses):
+            self.engine.resume(self._statuses[self._selected_idx].id)
+
+    def action_delete_selected(self):
+        if self._statuses and 0 <= self._selected_idx < len(self._statuses):
+            self.engine.remove(self._statuses[self._selected_idx].id)
+            self._selected_idx = max(0, self._selected_idx - 1)
+
+    def action_move_up(self):
+        self._selected_idx = max(0, self._selected_idx - 1)
+
+    def action_move_down(self):
+        if self._statuses:
+            self._selected_idx = min(len(self._statuses) - 1, self._selected_idx + 1)
+
+    def action_quit(self):
+        self.engine.shutdown()
+        self.exit()

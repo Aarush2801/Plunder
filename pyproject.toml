@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "ignition-torrent"
+version = "4.0.0"
+description = "Next-gen terminal torrent client with Matrix aesthetics and streaming zstd decompression"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "textual>=0.80",
+    "pyzstd>=0.16",
+    "click>=8.0",
+]
+
+[project.scripts]
+ignition = "ignition_entry:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ignition*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.toml"]
