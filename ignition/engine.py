@@ -57,6 +57,7 @@ class TorrentEngine:
         port_range: tuple[int, int] = (6881, 6891),
         max_upload_speed: int = 0,
         max_download_speed: int = 0,
+        seed_ratio: float = 0.0,
     ):
         self.download_dir = str(Path(download_dir).expanduser())
         Path(self.download_dir).mkdir(parents=True, exist_ok=True)
@@ -74,6 +75,7 @@ class TorrentEngine:
         if max_download_speed > 0:
             settings["download_rate_limit"] = max_download_speed
         self._session = lt.session(settings)
+        self._seed_ratio = seed_ratio
 
         for host, port in [
             ("router.bittorrent.com", 6881),
@@ -343,6 +345,29 @@ class TorrentEngine:
                 self._decompressor.on_piece_complete(filepath, local_offset, data)
         except Exception:
             pass
+
+    def enforce_ratios(self) -> list[str]:
+        """Pause seeding torrents that have met or exceeded the seed ratio. Returns paused IDs."""
+        if self._seed_ratio <= 0:
+            return []
+        paused = []
+        for tid, handle in list(self._handles.items()):
+            if not handle.is_valid():
+                continue
+            try:
+                s = handle.status()
+                if s.paused:
+                    continue
+                if _STATE_MAP.get(s.state, "unknown") != "seeding":
+                    continue
+                if s.all_time_download == 0:
+                    continue
+                if s.all_time_upload / s.all_time_download >= self._seed_ratio:
+                    handle.pause()
+                    paused.append(tid)
+            except Exception:
+                pass
+        return paused
 
     def shutdown(self):
         self._save_session()

@@ -10,6 +10,7 @@ from textual.screen import ModalScreen
 from textual.binding import Binding
 
 from ignition.engine import TorrentEngine, TorrentStatus
+from ignition.rss import RSSWatcher
 from ignition.server import StreamServer
 from ignition.ui.banner import IGNITION_ASCII
 from ignition.ui.rain import MatrixRain
@@ -86,7 +87,13 @@ class IgnitionApp(App):
         Binding("down", "move_down", "Down", show=False),
     ]
 
-    def __init__(self, engine: TorrentEngine, initial_magnet: str | None = None, http_port: int = 7889):
+    def __init__(
+        self,
+        engine: TorrentEngine,
+        initial_magnet: str | None = None,
+        http_port: int = 7889,
+        rss_watcher: RSSWatcher | None = None,
+    ):
         super().__init__()
         self.engine = engine
         self._initial_magnet = initial_magnet
@@ -95,6 +102,7 @@ class IgnitionApp(App):
         self._completed: set[str] = set()
         self._stream_server = StreamServer(engine, port=http_port)
         self._http_port = http_port
+        self._rss = rss_watcher
         self._watch_dir = Path.home() / ".ignition" / "watch"
         self._watch_dir.mkdir(parents=True, exist_ok=True)
         self._watched: set[str] = set()
@@ -130,6 +138,12 @@ class IgnitionApp(App):
         self.query_one("#log-panel", LogWidget).append(
             [f"[stream] http://127.0.0.1:{self._http_port}/"]
         )
+        if self._rss:
+            await self._rss.start()
+            if self._rss._feeds:
+                self.query_one("#log-panel", LogWidget).append(
+                    [f"[rss] watching {len(self._rss._feeds)} feed(s)"]
+                )
         self.set_interval(0.5, self._refresh)
 
     def _poll_watch_dir(self):
@@ -152,6 +166,12 @@ class IgnitionApp(App):
         self._poll_watch_dir()
         self._statuses = self.engine.get_status()
         alerts = self.engine.poll_alerts()
+
+        for tid in self.engine.enforce_ratios():
+            name = next((s.name for s in self._statuses if s.id == tid), tid[:16])
+            self.query_one("#log-panel", LogWidget).append(
+                [f"[ratio] seeding stopped: {name}"]
+            )
 
         # Detect newly completed torrents
         for s in self._statuses:
@@ -217,13 +237,20 @@ class IgnitionApp(App):
         self.push_screen(AddMagnetScreen(prefill=prefill), on_result)
 
     def _read_clipboard(self) -> str:
-        try:
-            result = subprocess.run(
-                ["pbpaste"], capture_output=True, text=True, timeout=1
-            )
-            return result.stdout.strip()
-        except Exception:
-            return ""
+        candidates = [
+            ["pbpaste"],                                     # macOS
+            ["xclip", "-o", "-selection", "clipboard"],     # Linux (xclip)
+            ["xsel", "--clipboard", "--output"],             # Linux (xsel)
+            ["wl-paste", "--no-newline"],                    # Wayland
+        ]
+        for cmd in candidates:
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=1)
+                if result.returncode == 0 and result.stdout.strip():
+                    return result.stdout.strip()
+            except Exception:
+                continue
+        return ""
 
     def action_pause_selected(self):
         if self._statuses and 0 <= self._selected_idx < len(self._statuses):
@@ -246,6 +273,8 @@ class IgnitionApp(App):
             self._selected_idx = min(len(self._statuses) - 1, self._selected_idx + 1)
 
     async def action_quit(self):
+        if self._rss:
+            await self._rss.stop()
         await self._stream_server.stop()
         self.engine.shutdown()
         self.exit()
