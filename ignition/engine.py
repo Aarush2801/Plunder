@@ -51,7 +51,13 @@ _LOG_ALERTS = {
 
 
 class TorrentEngine:
-    def __init__(self, download_dir: str, port_range: tuple[int, int] = (6881, 6891)):
+    def __init__(
+        self,
+        download_dir: str,
+        port_range: tuple[int, int] = (6881, 6891),
+        max_upload_speed: int = 0,
+        max_download_speed: int = 0,
+    ):
         self.download_dir = str(Path(download_dir).expanduser())
         Path(self.download_dir).mkdir(parents=True, exist_ok=True)
 
@@ -63,6 +69,10 @@ class TorrentEngine:
         settings["enable_natpmp"] = True
         settings["announce_to_all_trackers"] = True
         settings["announce_to_all_tiers"] = True
+        if max_upload_speed > 0:
+            settings["upload_rate_limit"] = max_upload_speed
+        if max_download_speed > 0:
+            settings["download_rate_limit"] = max_download_speed
         self._session = lt.session(settings)
 
         for host, port in [

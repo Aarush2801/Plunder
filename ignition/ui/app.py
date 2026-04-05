@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 from textual.app import App, ComposeResult
 from textual.widgets import Static, DataTable, Input, Label
 from textual.containers import Horizontal, Vertical
@@ -55,10 +58,15 @@ class DownloadCompleteScreen(ModalScreen):
 class AddMagnetScreen(ModalScreen):
     BINDINGS = [Binding("escape", "dismiss", "Cancel")]
 
+    def __init__(self, prefill: str = ""):
+        super().__init__()
+        self._prefill = prefill
+
     def compose(self) -> ComposeResult:
+        hint = " [dim][clipboard detected][/]" if self._prefill else ""
         with Vertical(id="dialog"):
-            yield Label("[bold green]ADD TORRENT[/]  (magnet link or .torrent path)", markup=True)
-            yield Input(placeholder="magnet:?xt=... or /path/to/file.torrent", id="magnet-input")
+            yield Label(f"[bold green]ADD TORRENT[/]  (magnet link or .torrent path){hint}", markup=True)
+            yield Input(value=self._prefill, placeholder="magnet:?xt=... or /path/to/file.torrent", id="magnet-input")
             yield Label("[dim]Press Enter to add, Esc to cancel[/]", markup=True)
 
     def on_input_submitted(self, event: Input.Submitted):
@@ -87,6 +95,9 @@ class IgnitionApp(App):
         self._completed: set[str] = set()
         self._stream_server = StreamServer(engine, port=http_port)
         self._http_port = http_port
+        self._watch_dir = Path.home() / ".ignition" / "watch"
+        self._watch_dir.mkdir(parents=True, exist_ok=True)
+        self._watched: set[str] = set()
 
     def compose(self) -> ComposeResult:
         yield MatrixRain()
@@ -121,7 +132,24 @@ class IgnitionApp(App):
         )
         self.set_interval(0.5, self._refresh)
 
+    def _poll_watch_dir(self):
+        for torrent_file in self._watch_dir.glob("*.torrent"):
+            key = str(torrent_file)
+            if key not in self._watched:
+                self._watched.add(key)
+                try:
+                    tid = self.engine.add_torrent_file(str(torrent_file))
+                    self.query_one("#log-panel", LogWidget).append(
+                        [f"[watch] auto-added: {torrent_file.name}"]
+                    )
+                    torrent_file.rename(torrent_file.with_suffix(".torrent.added"))
+                except Exception as e:
+                    self.query_one("#log-panel", LogWidget).append(
+                        [f"[watch] failed to add {torrent_file.name}: {e}"]
+                    )
+
     def _refresh(self):
+        self._poll_watch_dir()
         self._statuses = self.engine.get_status()
         alerts = self.engine.poll_alerts()
 
@@ -171,6 +199,9 @@ class IgnitionApp(App):
             self.query_one("#log-panel", LogWidget).append(alerts)
 
     def action_add_torrent(self):
+        clipboard = self._read_clipboard()
+        prefill = clipboard if clipboard and clipboard.startswith("magnet:") else ""
+
         def on_result(value: str | None):
             if not value:
                 return
@@ -183,7 +214,16 @@ class IgnitionApp(App):
             except Exception as e:
                 self.query_one("#log-panel", LogWidget).append([f"[!] Error: {e}"])
 
-        self.push_screen(AddMagnetScreen(), on_result)
+        self.push_screen(AddMagnetScreen(prefill=prefill), on_result)
+
+    def _read_clipboard(self) -> str:
+        try:
+            result = subprocess.run(
+                ["pbpaste"], capture_output=True, text=True, timeout=1
+            )
+            return result.stdout.strip()
+        except Exception:
+            return ""
 
     def action_pause_selected(self):
         if self._statuses and 0 <= self._selected_idx < len(self._statuses):

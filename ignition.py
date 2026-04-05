@@ -32,6 +32,8 @@ def _launch(initial_magnet: str | None):
     engine = TorrentEngine(
         download_dir=config.download_dir,
         port_range=(config.port, config.port + 10),
+        max_upload_speed=config.max_upload_speed,
+        max_download_speed=config.max_download_speed,
     )
     decompressor = StreamingDecompressor(watch_dir=config.download_dir)
     engine.set_decompressor(decompressor)
