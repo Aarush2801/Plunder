@@ -83,7 +83,10 @@ def daemon(port: int | None):
     engine.set_decompressor(decompressor)
 
     async def run():
-        server = StreamServer(engine, port=http_port)
+        server = StreamServer(
+            engine, port=http_port,
+            username=config.http_username, password=config.http_password,
+        )
         await server.start()
         click.echo(f"[daemon] streaming at http://127.0.0.1:{http_port}/")
 
@@ -135,6 +138,8 @@ def _launch(initial_magnet: str | None):
         initial_magnet=initial_magnet,
         http_port=config.http_port,
         rss_watcher=rss,
+        http_username=config.http_username,
+        http_password=config.http_password,
     )
     try:
         app.run()

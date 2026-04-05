@@ -15,6 +15,8 @@ class Config:
     rss_feeds: List[str] = field(default_factory=list)
     rss_interval: int = 300      # seconds between RSS polls
     rss_patterns: List[str] = field(default_factory=list)  # regex filters (empty = accept all)
+    http_username: str = ""      # basic auth (leave empty to disable)
+    http_password: str = ""
 
 
 def load() -> "Config":
@@ -33,6 +35,8 @@ def load() -> "Config":
         rss_feeds=data.get("rss_feeds", []),
         rss_interval=data.get("rss_interval", Config.rss_interval),
         rss_patterns=data.get("rss_patterns", []),
+        http_username=data.get("http_username", Config.http_username),
+        http_password=data.get("http_password", Config.http_password),
     )
 
 

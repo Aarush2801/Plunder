@@ -11,6 +11,7 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import shutil
 import subprocess
@@ -119,11 +120,20 @@ def _build_html(statuses, engine, host: str, port: int) -> str:
 
 
 class StreamServer:
-    def __init__(self, engine, host: str = "127.0.0.1", port: int = 7889):
+    def __init__(
+        self,
+        engine,
+        host: str = "127.0.0.1",
+        port: int = 7889,
+        username: str = "",
+        password: str = "",
+    ):
         self._engine = engine
         self._host = host
         self._port = port
         self._server: asyncio.Server | None = None
+        self._username = username
+        self._password = password
 
     async def start(self):
         self._server = await asyncio.start_server(
@@ -174,11 +184,32 @@ class StreamServer:
                 headers[k.decode().lower()] = v.decode().strip()
         return method, path, headers
 
+    def _check_auth(self, headers: dict) -> bool:
+        if not self._username:
+            return True
+        auth = headers.get("authorization", "")
+        if not auth.startswith("Basic "):
+            return False
+        try:
+            decoded = base64.b64decode(auth[6:]).decode()
+            user, _, pwd = decoded.partition(":")
+            return user == self._username and pwd == self._password
+        except Exception:
+            return False
+
     async def _route(
         self, method: str, path: str, headers: dict, writer: asyncio.StreamWriter
     ):
         if method != "GET":
             await self._respond(writer, 405, {}, b"Method Not Allowed")
+            return
+
+        if not self._check_auth(headers):
+            await self._respond(
+                writer, 401,
+                {"WWW-Authenticate": 'Basic realm="PLUNDER"'},
+                b"Unauthorized",
+            )
             return
 
         if path in ("/", ""):
@@ -187,6 +218,10 @@ class StreamServer:
 
         if path == "/api":
             await self._serve_list(writer)
+            return
+
+        if path == "/metrics":
+            await self._serve_metrics(writer)
             return
 
         parts = path.strip("/").split("/")
@@ -250,6 +285,56 @@ class StreamServer:
             })
         body = json.dumps(result, indent=2).encode()
         await self._respond(writer, 200, {"Content-Type": "application/json"}, body)
+
+    # ------------------------------------------------------------------ #
+    # GET /metrics  — Prometheus exposition format                        #
+    # ------------------------------------------------------------------ #
+
+    async def _serve_metrics(self, writer: asyncio.StreamWriter):
+        statuses = self._engine.get_status()
+        lines = []
+
+        def gauge(name: str, help_text: str, unit: str = ""):
+            lines.append(f"# HELP {name} {help_text}")
+            lines.append(f"# TYPE {name} gauge")
+
+        gauge("plunder_download_rate_bytes", "Current download rate in bytes/sec")
+        for s in statuses:
+            label = f'info_hash="{s.id}",name="{s.name}"'
+            lines.append(f"plunder_download_rate_bytes{{{label}}} {s.download_rate}")
+
+        gauge("plunder_upload_rate_bytes", "Current upload rate in bytes/sec")
+        for s in statuses:
+            label = f'info_hash="{s.id}",name="{s.name}"'
+            lines.append(f"plunder_upload_rate_bytes{{{label}}} {s.upload_rate}")
+
+        gauge("plunder_progress_ratio", "Download progress (0.0–1.0)")
+        for s in statuses:
+            label = f'info_hash="{s.id}",name="{s.name}"'
+            lines.append(f"plunder_progress_ratio{{{label}}} {s.progress:.4f}")
+
+        gauge("plunder_peers_total", "Number of connected peers")
+        for s in statuses:
+            label = f'info_hash="{s.id}",name="{s.name}"'
+            lines.append(f"plunder_peers_total{{{label}}} {s.num_peers}")
+
+        gauge("plunder_seed_ratio", "Upload/download ratio")
+        for s in statuses:
+            ratio = (s.upload_rate / s.download_rate) if s.download_rate > 0 else 0
+            label = f'info_hash="{s.id}",name="{s.name}"'
+            lines.append(f"plunder_seed_ratio{{{label}}} {ratio:.4f}")
+
+        gauge("plunder_total_size_bytes", "Total torrent size in bytes")
+        for s in statuses:
+            label = f'info_hash="{s.id}",name="{s.name}"'
+            lines.append(f"plunder_total_size_bytes{{{label}}} {s.total_size}")
+
+        body = "\n".join(lines).encode() + b"\n"
+        await self._respond(
+            writer, 200,
+            {"Content-Type": "text/plain; version=0.0.4; charset=utf-8"},
+            body,
+        )
 
     # ------------------------------------------------------------------ #
     # GET /stream/<hash>/<idx>  — file streaming with Range support       #
@@ -354,7 +439,7 @@ class StreamServer:
         writer: asyncio.StreamWriter,
     ):
         if not shutil.which("ffmpeg"):
-            await self._respond(writer, 503, {}, b"ffmpeg not found — install it to use transcode")
+            await self._respond(writer, 503, {}, b"ffmpeg not found - install it to use transcode")
             return
 
         info = self._engine.get_file_info(info_hash, file_index)

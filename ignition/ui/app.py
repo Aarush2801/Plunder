@@ -74,6 +74,61 @@ class AddMagnetScreen(ModalScreen):
         self.dismiss(event.value.strip())
 
 
+class FilePickerScreen(ModalScreen):
+    BINDINGS = [
+        Binding("escape", "close", "Close & apply"),
+        Binding("space", "toggle_file", "Toggle", show=False),
+        Binding("up", "move_up", "Up", show=False),
+        Binding("down", "move_down", "Down", show=False),
+    ]
+
+    def __init__(self, engine: TorrentEngine, torrent_id: str, name: str):
+        super().__init__()
+        self._engine = engine
+        self._tid = torrent_id
+        self._name = name
+        self._files = engine.get_files(torrent_id)
+        pris = engine.get_file_priorities(torrent_id)
+        self._enabled = [
+            (pris[i] > 0 if i < len(pris) else True)
+            for i in range(len(self._files))
+        ]
+        self._cursor = 0
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="file-dialog"):
+            yield Label(f"[bold green]SELECT FILES[/] — {self._name[:40]}", markup=True)
+            table = DataTable(id="file-table", show_cursor=True)
+            table.add_columns("DL", "FILE", "SIZE")
+            for i, f in enumerate(self._files):
+                mark = "[green]✓[/]" if self._enabled[i] else "[dim red]✗[/]"
+                table.add_row(mark, f["name"][:50], fmt_bytes(f["size"]), key=str(i))
+            yield table
+            yield Label("[dim]Space = toggle  Esc = apply & close[/]", markup=True)
+
+    def on_mount(self):
+        self.query_one("#file-table", DataTable).focus()
+
+    def action_toggle_file(self):
+        table = self.query_one("#file-table", DataTable)
+        idx = table.cursor_row
+        if 0 <= idx < len(self._enabled):
+            self._enabled[idx] = not self._enabled[idx]
+            mark = "[green]✓[/]" if self._enabled[idx] else "[dim red]✗[/]"
+            table.update_cell(str(idx), "DL", mark)
+
+    def action_move_up(self):
+        self.query_one("#file-table", DataTable).action_scroll_up()
+
+    def action_move_down(self):
+        self.query_one("#file-table", DataTable).action_scroll_down()
+
+    def action_close(self):
+        for i, enabled in enumerate(self._enabled):
+            self._engine.set_file_priority(self._tid, i, 4 if enabled else 0)
+        self.dismiss()
+
+
 class IgnitionApp(App):
     CSS = CSS
     TITLE = "PLUNDER"
@@ -82,6 +137,7 @@ class IgnitionApp(App):
         Binding("p", "pause_selected", "Pause"),
         Binding("r", "resume_selected", "Resume"),
         Binding("d", "delete_selected", "Delete"),
+        Binding("f", "file_picker", "Files"),
         Binding("q", "quit", "Quit"),
         Binding("up", "move_up", "Up", show=False),
         Binding("down", "move_down", "Down", show=False),
@@ -93,6 +149,8 @@ class IgnitionApp(App):
         initial_magnet: str | None = None,
         http_port: int = 7889,
         rss_watcher: RSSWatcher | None = None,
+        http_username: str = "",
+        http_password: str = "",
     ):
         super().__init__()
         self.engine = engine
@@ -100,7 +158,10 @@ class IgnitionApp(App):
         self._selected_idx = 0
         self._statuses: list[TorrentStatus] = []
         self._completed: set[str] = set()
-        self._stream_server = StreamServer(engine, port=http_port)
+        self._stream_server = StreamServer(
+            engine, port=http_port,
+            username=http_username, password=http_password,
+        )
         self._http_port = http_port
         self._rss = rss_watcher
         self._watch_dir = Path.home() / ".ignition" / "watch"
@@ -120,7 +181,7 @@ class IgnitionApp(App):
             yield ThroughputWidget(id="throughput-panel")
         yield LogWidget(id="log-panel")
         yield Static(
-            "  [a]dd   [p]ause   [r]esume   [d]elete   [q]uit  ",
+            "  [a]dd   [p]ause   [r]esume   [d]elete   [f]iles   [q]uit  ",
             id="keybinds", markup=False,
         )
 
@@ -259,6 +320,15 @@ class IgnitionApp(App):
     def action_resume_selected(self):
         if self._statuses and 0 <= self._selected_idx < len(self._statuses):
             self.engine.resume(self._statuses[self._selected_idx].id)
+
+    def action_file_picker(self):
+        if not self._statuses or not (0 <= self._selected_idx < len(self._statuses)):
+            return
+        s = self._statuses[self._selected_idx]
+        if not self.engine.get_files(s.id):
+            self.query_one("#log-panel", LogWidget).append(["[!] Metadata not yet available"])
+            return
+        self.push_screen(FilePickerScreen(self.engine, s.id, s.name))
 
     def action_delete_selected(self):
         if self._statuses and 0 <= self._selected_idx < len(self._statuses):

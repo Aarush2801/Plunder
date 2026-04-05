@@ -346,6 +346,26 @@ class TorrentEngine:
         except Exception:
             pass
 
+    def get_file_priorities(self, torrent_id: str) -> list[int]:
+        """Returns per-file priority list (0 = skip, 4 = normal)."""
+        h = self._handles.get(torrent_id)
+        if not h or not h.is_valid():
+            return []
+        try:
+            return list(h.get_file_priorities())
+        except Exception:
+            return []
+
+    def set_file_priority(self, torrent_id: str, file_index: int, priority: int):
+        """Set download priority for a single file (0 = skip, 4 = normal)."""
+        h = self._handles.get(torrent_id)
+        if not h or not h.is_valid():
+            return
+        try:
+            h.file_priority(file_index, priority)
+        except Exception:
+            pass
+
     def enforce_ratios(self) -> list[str]:
         """Pause seeding torrents that have met or exceeded the seed ratio. Returns paused IDs."""
         if self._seed_ratio <= 0:

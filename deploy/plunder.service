@@ -1,0 +1,19 @@
+[Unit]
+Description=PLUNDER BitTorrent daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/plunder/ignition.py daemon
+WorkingDirectory=/opt/plunder
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+# Run as your own user — change both lines to match
+User=%i
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

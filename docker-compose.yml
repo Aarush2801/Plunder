@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  plunder:
+    build: .
+    container_name: plunder
+    restart: unless-stopped
+    ports:
+      - "7889:7889"       # HTTP streaming / browser UI / metrics
+      - "6881:6881/tcp"   # BitTorrent
+      - "6881:6881/udp"   # DHT
+    volumes:
+      - "${HOME}/Downloads/Ignition/downloads:/downloads"
+      - "${HOME}/.ignition:/root/.ignition"   # config + resume data
+    environment:
+      - PYTHONUNBUFFERED=1
