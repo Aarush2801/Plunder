@@ -1,15 +1,15 @@
-# IGNITION
+# PLUNDER
 
 A terminal-based BitTorrent client with a Matrix-inspired TUI. Downloads magnet links and `.torrent` files with sequential piece ordering and streaming zstd decompression.
 
 ```
- ██╗ ██████╗ ███╗   ██╗██╗████████╗██╗ ██████╗ ███╗   ██╗
- ██║██╔════╝ ████╗  ██║██║╚══██╔══╝██║██╔═══██╗████╗  ██║
- ██║██║  ███╗██╔██╗ ██║██║   ██║   ██║██║   ██║██╔██╗ ██║
- ██║██║   ██║██║╚██╗██║██║   ██║   ██║██║   ██║██║╚██╗██║
- ██║╚██████╔╝██║ ╚████║██║   ██║   ██║╚██████╔╝██║ ╚████║
- ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝
-          [ N E X T - G E N   M E D I A   W R A P P E R ]
+ ██████╗ ██╗     ██╗   ██╗███╗   ██╗██████╗ ███████╗██████╗
+ ██╔══██╗██║     ██║   ██║████╗  ██║██╔══██╗██╔════╝██╔══██╗
+ ██████╔╝██║     ██║   ██║██╔██╗ ██║██║  ██║█████╗  ██████╔╝
+ ██╔═══╝ ██║     ██║   ██║██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗
+ ██║     ███████╗╚██████╔╝██║ ╚████║██████╔╝███████╗██║  ██║
+ ╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝
+              [ S T E A L   F R O M   T H E   S E A ]
 ```
 
 ## What it does
@@ -36,8 +36,8 @@ pip install textual pyzstd click
 
 Clone the repo:
 ```bash
-git clone https://github.com/Aarush2801/ignition.git
-cd ignition
+git clone https://github.com/Aarush2801/Ignition.git
+cd Ignition
 ```
 
 ## Usage
@@ -100,7 +100,7 @@ seed_ratio = 2.0
 
 ## Why not just use qBittorrent?
 
-qBittorrent uses random piece selection by default, which is correct for swarm health but means you can't use content until 100% complete. Ignition trades swarm efficiency for time-to-usable-data — useful when downloading large compressed archives where you want to start processing output before the transfer finishes.
+qBittorrent uses random piece selection by default, which is correct for swarm health but means you can't use content until 100% complete. Plunder trades swarm efficiency for time-to-usable-data — useful when downloading large compressed archives where you want to start processing output before the transfer finishes.
 
 ## Dependencies
 

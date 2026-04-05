@@ -66,7 +66,7 @@ class AddMagnetScreen(ModalScreen):
 
 class IgnitionApp(App):
     CSS = CSS
-    TITLE = "IGNITION"
+    TITLE = "PLUNDER"
     BINDINGS = [
         Binding("a", "add_torrent", "Add"),
         Binding("p", "pause_selected", "Pause"),

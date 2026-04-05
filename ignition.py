@@ -15,7 +15,7 @@ from ignition.ui.app import IgnitionApp
 @click.group(invoke_without_command=True)
 @click.pass_context
 def cli(ctx):
-    """IGNITION — next-gen terminal torrent client."""
+    """PLUNDER — steal from the sea."""
     if ctx.invoked_subcommand is None:
         _launch(initial_magnet=None)
 
