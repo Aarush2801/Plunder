@@ -35,7 +35,7 @@ def _launch(initial_magnet: str | None):
     )
     decompressor = StreamingDecompressor(watch_dir=config.download_dir)
     engine.set_decompressor(decompressor)
-    app = IgnitionApp(engine=engine, initial_magnet=initial_magnet)
+    app = IgnitionApp(engine=engine, initial_magnet=initial_magnet, http_port=config.http_port)
     try:
         app.run()
     finally:

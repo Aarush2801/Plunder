@@ -209,6 +209,90 @@ class TorrentEngine:
             self._session.remove_torrent(h, flags)
             del self._handles[torrent_id]
 
+    # ------------------------------------------------------------------ #
+    # Streaming server helpers                                            #
+    # ------------------------------------------------------------------ #
+
+    def get_files(self, info_hash: str) -> list[dict]:
+        h = self._handles.get(info_hash)
+        if not h or not h.is_valid():
+            return []
+        try:
+            ti = h.torrent_file()
+            if not ti:
+                return []
+            files = ti.files()
+            result = []
+            for i in range(files.num_files()):
+                result.append({
+                    "index": i,
+                    "name": files.file_name(i),
+                    "size": files.file_size(i),
+                    "path": str(Path(self.download_dir) / files.file_path(i)),
+                })
+            return result
+        except Exception:
+            return []
+
+    def get_file_info(self, info_hash: str, file_index: int) -> dict | None:
+        h = self._handles.get(info_hash)
+        if not h or not h.is_valid():
+            return None
+        try:
+            ti = h.torrent_file()
+            if not ti:
+                return None
+            files = ti.files()
+            if file_index >= files.num_files():
+                return None
+            return {
+                "size": files.file_size(file_index),
+                "path": str(Path(self.download_dir) / files.file_path(file_index)),
+            }
+        except Exception:
+            return None
+
+    def have_piece(self, info_hash: str, piece_idx: int) -> bool:
+        h = self._handles.get(info_hash)
+        if not h or not h.is_valid():
+            return False
+        try:
+            return h.have_piece(piece_idx)
+        except Exception:
+            return False
+
+    def hint_piece_urgency(self, info_hash: str, piece_idx: int):
+        h = self._handles.get(info_hash)
+        if not h or not h.is_valid():
+            return
+        try:
+            h.set_piece_deadline(piece_idx, 0)
+        except Exception:
+            pass
+
+    def byte_to_piece(self, info_hash: str, file_index: int, byte_offset: int) -> int | None:
+        h = self._handles.get(info_hash)
+        if not h or not h.is_valid():
+            return None
+        try:
+            ti = h.torrent_file()
+            if not ti:
+                return None
+            peer_req = ti.map_file(file_index, byte_offset, 0)
+            return peer_req.piece
+        except Exception:
+            return None
+
+    def piece_length(self, info_hash: str) -> int:
+        h = self._handles.get(info_hash)
+        if not h or not h.is_valid():
+            return 0
+        try:
+            ti = h.torrent_file()
+            return ti.piece_length() if ti else 0
+        except Exception:
+            return 0
+
     def poll_alerts(self) -> list[str]:
         """Call from the main thread only. Drains libtorrent alerts and returns log strings."""
         msgs = []

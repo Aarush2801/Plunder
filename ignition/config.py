@@ -8,6 +8,7 @@ from pathlib import Path
 class Config:
     download_dir: str = str(Path.home() / "Downloads" / "Ignition" / "downloads")
     port: int = 6881
+    http_port: int = 7889
     max_upload_speed: int = 0  # 0 = unlimited (bytes/sec)
     seed_ratio: float = 2.0
 
@@ -21,6 +22,7 @@ def load() -> Config:
     return Config(
         download_dir=data.get("download_dir", Config.download_dir),
         port=data.get("port", Config.port),
+        http_port=data.get("http_port", Config.http_port),
         max_upload_speed=data.get("max_upload_speed", Config.max_upload_speed),
         seed_ratio=data.get("seed_ratio", Config.seed_ratio),
     )

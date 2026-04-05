@@ -7,6 +7,7 @@ from textual.screen import ModalScreen
 from textual.binding import Binding
 
 from ignition.engine import TorrentEngine, TorrentStatus
+from ignition.server import StreamServer
 from ignition.ui.banner import IGNITION_ASCII
 from ignition.ui.rain import MatrixRain
 from ignition.ui.theme import CSS
@@ -77,13 +78,15 @@ class IgnitionApp(App):
         Binding("down", "move_down", "Down", show=False),
     ]
 
-    def __init__(self, engine: TorrentEngine, initial_magnet: str | None = None):
+    def __init__(self, engine: TorrentEngine, initial_magnet: str | None = None, http_port: int = 7889):
         super().__init__()
         self.engine = engine
         self._initial_magnet = initial_magnet
         self._selected_idx = 0
         self._statuses: list[TorrentStatus] = []
         self._completed: set[str] = set()
+        self._stream_server = StreamServer(engine, port=http_port)
+        self._http_port = http_port
 
     def compose(self) -> ComposeResult:
         yield MatrixRain()
@@ -102,7 +105,7 @@ class IgnitionApp(App):
             id="keybinds", markup=False,
         )
 
-    def on_mount(self):
+    async def on_mount(self):
         if self._initial_magnet:
             try:
                 if self._initial_magnet.startswith("magnet:"):
@@ -112,6 +115,10 @@ class IgnitionApp(App):
                 self.query_one("#log-panel", LogWidget).append([f"[+] Added: {tid[:16]}..."])
             except Exception as e:
                 self.query_one("#log-panel", LogWidget).append([f"[!] Error: {e}"])
+        await self._stream_server.start()
+        self.query_one("#log-panel", LogWidget).append(
+            [f"[stream] http://127.0.0.1:{self._http_port}/"]
+        )
         self.set_interval(0.5, self._refresh)
 
     def _refresh(self):
@@ -198,6 +205,7 @@ class IgnitionApp(App):
         if self._statuses:
             self._selected_idx = min(len(self._statuses) - 1, self._selected_idx + 1)
 
-    def action_quit(self):
+    async def action_quit(self):
+        await self._stream_server.stop()
         self.engine.shutdown()
         self.exit()
