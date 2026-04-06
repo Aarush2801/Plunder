@@ -3,6 +3,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
+CONFIG_PATH = Path.home() / ".ignition" / "config.toml"
+
+_SCALAR_FIELDS = {
+    "download_dir": str,
+    "port": int,
+    "http_port": int,
+    "max_upload_speed": int,
+    "max_download_speed": int,
+    "seed_ratio": float,
+    "rss_interval": int,
+}
+
 
 @dataclass
 class Config:
@@ -19,8 +31,8 @@ class Config:
     http_password: str = ""
 
 
-def load() -> "Config":
-    config_path = Path.home() / ".ignition" / "config.toml"
+def load() -> Config:
+    config_path = CONFIG_PATH
     if not config_path.exists():
         return Config()
     with open(config_path, "rb") as f:
@@ -40,19 +52,6 @@ def load() -> "Config":
     )
 
 
-CONFIG_PATH = Path.home() / ".ignition" / "config.toml"
-
-_SCALAR_FIELDS = {
-    "download_dir": str,
-    "port": int,
-    "http_port": int,
-    "max_upload_speed": int,
-    "max_download_speed": int,
-    "seed_ratio": float,
-    "rss_interval": int,
-}
-
-
 def save_value(key: str, value: str) -> None:
     """Write a single key=value to the config TOML file."""
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -69,7 +68,6 @@ def save_value(key: str, value: str) -> None:
 
 def _write_toml(path: Path, data: dict) -> None:
     lines = []
-    # scalars first, then lists
     for k, v in data.items():
         if isinstance(v, list):
             items = ", ".join(f'"{x}"' for x in v)

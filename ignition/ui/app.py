@@ -115,7 +115,7 @@ class FilePickerScreen(ModalScreen):
         if 0 <= idx < len(self._enabled):
             self._enabled[idx] = not self._enabled[idx]
             mark = "[green]✓[/]" if self._enabled[idx] else "[dim red]✗[/]"
-            table.update_cell(str(idx), "DL", mark)
+            table.update_cell_at((idx, 0), mark)
 
     def action_move_up(self):
         self.query_one("#file-table", DataTable).action_scroll_up()
